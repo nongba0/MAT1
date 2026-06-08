@@ -1,0 +1,137 @@
+문제상황
+나의 네이버지도 속 즐겨찾기된 장소들을 엑셀로 저장하고 싶다.
+그러나 네이버에서는 별도로 제공하지 않는다.
+나의 이 수많은 즐겨찾기를 과연 DB화할 수 있을까?
+https://blog.naver.com/kimhongsi17/222663699179
+네이버 지도 즐겨찾기 저장 데이터 활용하기 (경위도 좌표 구하기, 구글맵으로 옮기기, 엑셀로
+오늘은 네이버 지도 즐겨찾기 (2000개 다 채운 사람 나야 나) 데이터를 활용하는 방법을 정리해보았어요. 1...
+blog.naver.com
+이전에도 필자가 운영하는 네이버블로그에 동일한 주제로 업로드한 경험이 있다.
+그러나 지금 좀 바뀐 게 있는 것 같아, 2025년 최신 버전으로 다시 글을 써본다.
+해결방법
+요약해보면 본 작업은
+네이버지도 즐겨찾기 list를 json 파일로 변환하고,
+이를 다시 엑셀 등 본인이 쓰기 편한 형식으로 바꾸는 방식으로 진행된다.
+1. 네이버지도 즐겨찾기 리스트를 json 으로 내려받기
+먼저 네이버 계정에 로그인한 후
+https://pages.map.naver.com/save-pages/api/maps-bookmark/v3/folders?start=0&limit=20&sort=lastUseTime&folderType=all
+위 링크에 접속한다.
+그러면 본인이 보유하고 있는 즐겨찾기 리스트들이 나온다.
+이 중 확인이 필요한 것은 "name"과 "shareID"이다.
+내가 내보내기 하고 싶은 즐겨찾기는 "식당"이라는 이름의 list이고, 위의 네모 부분에 해당한다.
+그리고 그 뒤에 shareID도 잘 적혀있다.
+이 shareID를 잘 복사해두자.
+https://pages.map.naver.com/save-pages/api/maps-bookmark/v3/shares/
+{shareID}
+/bookmarks?start=0&limit=5000&sort=lastUseTime
+그리고 위 링크의 shareID부분에 우리가 복사해둔 실제 shareID를 넣어보자.
+그러면 해당 list 내의 장소들이 적혀있는 json 파일이 나온다.
+본 화면 상에서 다른 이름으로 저장 클릭
+기본 값인 bookmarks.json으로 저장하자.
+위 json 구조를 분석해보면 아래와 같다.
+"bookmarkList":
+[{"bookmarkId":3549270597,"name":"평가옥 광화문점","displayName":"","px":126.9744472,"py":37.5721028,"type":"place","useTime":1751684875000,"lastUpdateTime":1751684875000,"creationTime":1751684874000,"order":65535,"bookmarkMismatchInfo":{"isMatched":true,"details":["AVAILABLE"]},"sid":"33876339","address":"서울 종로구 새문안로5길 19","memo":"","url":"","mcid":"DINING","mcidName":"음식점","rcode":"09110117","cidPath":["220036","220037","220063","1000910"],"available":true,"folderMappings":null,"placeInfo":null,"isIndoor":false},
+{"bookmarkId":3547607083,"name":"을지면옥","displayName":"","px":126.9886066,"py":37.5736812,"type":"place","useTime":1751634189000,"lastUpdateTime":1751634189000,"creationTime":1751634188000,"order":65535,"bookmarkMismatchInfo":{"isMatched":true,"details":["AVAILABLE"]},"sid":"1707416833","address":"서울 종로구 삼일대로30길 12","memo":"","url":"","mcid":"DINING","mcidName":"음식점","rcode":"09110137","cidPath":["220036","220037","220063","220645"],"available":true,"folderMappings":null,"placeInfo":null,"isIndoor":false},
+...
+이와 같이,
+북마크 리스트 안에
+여러 개의 장소들에 대한 데이터(위의 예시에서는 평가옥 광화문점, 을지면옥) 가 있음을 알 수 있다.
+또한 하나의 장소에 대해 제공하는 데이터는 아래와 같다고 추정된다.
+키
+설명
+bookmarkId
+고유 북마크 ID
+name
+장소 이름
+px, py
+장소의 경도(px), 위도(py)
+type
+타입 (대부분 "place")
+useTime, lastUpdateTime, creationTime
+타임스탬프 (epoch milliseconds 단위)
+사용한 시간, 마지막으로 업데이트한 시간, 리스트에 추가한 시간
+sid
+장소 식별자 (ID)
+address
+도로명 주소
+memo
+메모 (유저가 직접 추가한 텍스트)
+url
+url 링크
+mcid
+대분류 카테고리 코드 (dining, cafe)
+mcidName
+대분류 카테고리 이름 (예: 음식점, 카페 등)
+rcode
+행정구역 코드 (아마도 읍면동 코드)
+cidPath
+아마도(중분류 및 소분류 카테고리 코드 경로)
+available
+장소 사용 가능 여부 (true/false) : 폐업되었으면 false처리될 듯
+isIndoor
+실내 여부 (그런데 필자의 경우 전부 false임)
+2. 즐겨찾기 json을 csv로 변환하기
+이제 이 길고 긴 json을 파싱해보자.
+여러 가지 방법이 있겠으나, 필자는 파이썬을 활용해보겠다.
+import json
+import pandas as pd
+from datetime import datetime
+
+# 1. JSON 파일 불러오기
+with open("bookmarks.json의경로를입력", "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+# 2. bookmarkList 가져오기
+bookmarks = data["bookmarkList"]
+
+# 3. 필요한 필드 정리
+records = []
+for bm in bookmarks:
+    record = {
+        "북마크 ID": bm.get("bookmarkId", ""),
+        "장소 이름": bm.get("name", ""),
+        "경도(px)": bm.get("px", ""),
+        "위도(py)": bm.get("py", ""),
+        "타입": bm.get("type", ""),
+        "리스트 추가 시간": datetime.fromtimestamp(bm.get("creationTime", 0)/1000).strftime('%Y-%m-%d %H:%M:%S'),
+        "마지막 사용 시간": datetime.fromtimestamp(bm.get("useTime", 0)/1000).strftime('%Y-%m-%d %H:%M:%S'),
+        "최종 업데이트 시간": datetime.fromtimestamp(bm.get("lastUpdateTime", 0)/1000).strftime('%Y-%m-%d %H:%M:%S'),
+        "장소 ID (sid)": bm.get("sid", ""),
+        "도로명 주소": bm.get("address", ""),
+        "유저 메모": bm.get("memo", ""),
+        "URL": bm.get("url", ""),
+        "카테고리 코드 (mcid)": bm.get("mcid", ""),
+        "카테고리 이름": bm.get("mcidName", ""),
+        "행정구역 코드(rcode)": bm.get("rcode", ""),
+        "카테고리 경로(cidPath)": ", ".join(bm.get("cidPath", [])),
+        "폐업 여부 (available)": bm.get("available", ""),
+        "실내 여부 (isIndoor)": bm.get("isIndoor", "")
+    }
+    records.append(record)
+
+# 4. DataFrame으로 변환
+df = pd.DataFrame(records)
+
+# 5. csv로 저장
+df.to_csv(r"C:\Users\jiyun\OneDrive\바탕 화면\북마크_리스트.csv", encoding= "euc-kr")
+그 결과 1초만에 아래의 리스트를 얻을 수 있었다.
+3. 즐겨찾기 장소 지도로 시각화하기
+이걸 시각화해보겠다.
+QGIS를 열고 쉼표 모양 아이콘 클릭
+- 파일이름 옆의 ... 을 클릭하여 방금 만든 csv를 추가
+-
+인코딩은 euc-kr을 선택
+-
+도형 정의 > 포인트 좌표 > x필드는 경도, y필드는 위도로 세팅
+하단의 추가 클릭
+그러면 이와 같이 잘 시각화된 것을 알 수 있다.
+웹 > TMS for Korea > Vworld maps > Vworld street 클릭
+설치 전이라면 아래 포스팅 참고
+https://kimhongsi.tistory.com/entry/QGIS-%EB%B0%B0%EA%B2%BD%EC%A7%80%EB%8F%84%EB%A1%9C-%EC%B9%B4%EC%B9%B4%EC%98%A4%EC%A7%80%EB%8F%84-%EB%84%A4%EC%9D%B4%EB%B2%84%EC%A7%80%EB%8F%84-%EA%B9%94%EA%B8%B0-TMS-for-Korea
+[QGIS] 배경지도로 카카오지도, 네이버지도, VWorld 깔기 & 배경지도 투영 이슈 해결법 :: TMS for Korea
+문제상황베이스맵으로 카카오지도, 네이버지도를 깔고 싶다. 해결방법 플러그인 설치 클릭 기다리면 설치완료 창 끄고 웹 > TMS for Korea > 원하는 지도 선택하기 Kakao Street + 시군구 shp파일 올린 결
+kimhongsi.tistory.com
+그러면 시각화도 완료!
+혹시 카테고리별로 달리 시각화하고 싶다면
+심볼 > 분류값 사용 > 카테고리 코드 > 하단의 "분류" 버튼 클릭
+이와 같이 카테고리별로 시각화도 가능하다.
